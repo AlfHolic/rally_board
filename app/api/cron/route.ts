@@ -1,5 +1,6 @@
 import webpush from "web-push";
 import { flushPromotions } from "../../promo";
+import { flushClubNotifications } from "@/lib/club-push";
 
 const URL = process.env.SUPABASE_URL ?? "https://ouawzqhaioscsqcysago.supabase.co";
 const KEY = process.env.SUPABASE_PUBLISHABLE_KEY ?? "sb_publishable_FoWZSvJR7TaI5B2WP9GWJg_bvaGb-5k";
@@ -45,5 +46,6 @@ export async function GET(req: Request) {
     ),
   );
   const promos = await flushPromotions();
+  await flushClubNotifications();
   return Response.json({ ok: true, jobs: items.length, sent, promos });
 }

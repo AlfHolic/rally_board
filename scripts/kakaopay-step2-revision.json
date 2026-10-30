@@ -1,0 +1,6 @@
+{
+  "tool": "Built-in image_gen",
+  "asset": "public/guides/kakaopay/step-2-v2.png",
+  "alsoReplaces": "public/guides/kakaopay/step-2.png",
+  "prompt": "Edit this instructional screenshot. Keep the same 852:1846 portrait aspect ratio. Preserve the top area, the yellow Kakao Pay strip, the clear Send button, the red ellipse, arrow, and exact red label '2. 송금'. The requested change is complete opaque removal of all content BELOW the yellow payment strip (everything from about y=510/1846 to the bottom). Replace that entire lower region with a flat, solid very light gray/off-white panel. ABSOLUTELY NO advertising, no people, no body or clothing shapes, no silhouettes, no residual textures from the original and no translucent blurring in that region. It must be uniformly opaque pixels. A small centered neutral caption '송금 버튼을 눌러주세요' may appear below the strip, with the rest blank. Preserve the privacy blur in the upper area so no private balance or personal details become visible. This is a clean button-location guide, not a recreation of the full More screen."
+}

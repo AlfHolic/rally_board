@@ -4,7 +4,9 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start"
+    "start": "next start",
+    "schema:sync": "node scripts/sync-club-schema.cjs",
+    "test:club": "node tests/club-integration.cjs"
   },
   "dependencies": {
     "@tanstack/react-query": "5.59.0",

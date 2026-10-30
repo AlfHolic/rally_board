@@ -1,0 +1,31 @@
+{
+  "tool": "Built-in image_gen",
+  "purpose": "Privacy-safe edited copies; original images are not served by the app.",
+  "prompts": [
+    {
+      "step": 1,
+      "asset": "public/guides/kakaopay/step-1.png",
+      "prompt": "Use case: precise-object-edit. Edit the attached screenshot into one privacy-safe instructional image for a website. Keep the original portrait aspect ratio and exact interface geometry, without device frame or outside border. Only bottom-right navigation three dots More button, at about 90% width and 94% height. Red oval tightly around the three dots, red arrow pointing there, label '1. 더보기'. Everything else must be heavily gaussian-blurred: all private financial details, personal identities, status bar time, office surroundings, ads, and unrelated UI. The only sharp content should be the indicated generic clickable control plus its red annotation. Do not reproduce any personal text, names, digits, QR code, photos or balances. This is step 1 of five separate matching images, white/red annotation styling. Preserve the clickable target at its original location. No full original screenshot visible beneath an overlay: blur must be baked into pixels."
+    },
+    {
+      "step": 2,
+      "asset": "public/guides/kakaopay/step-2.png",
+      "prompt": "Use case: precise-object-edit. Edit the attached screenshot into one privacy-safe instructional image for a website. Keep the original portrait aspect ratio and exact interface geometry, without device frame or outside border. Only the word Send in the yellow Kakao Pay strip near x=60%, y=23%. Keep only this generic menu visible and clear. Red oval around Send and red arrow pointing there, label '2. 송금'. IMPORTANT fully obscure the balance number to the left and all advertisements. Everything else must be heavily gaussian-blurred: all private financial details, personal identities, status bar time, office surroundings, ads, and unrelated UI. The only sharp content should be the indicated generic clickable control plus its red annotation. Do not reproduce any personal text, names, digits, QR code, photos or balances. This is step 2 of five separate matching images, white/red annotation styling. Preserve the clickable target at its original location. No full original screenshot visible beneath an overlay: blur must be baked into pixels."
+    },
+    {
+      "step": 3,
+      "asset": "public/guides/kakaopay/step-3.png",
+      "prompt": "Use case: precise-object-edit. Edit the attached screenshot into one privacy-safe instructional image for a website. Keep the original portrait aspect ratio and exact interface geometry, without device frame or outside border. Only the scan/QR icon button at bottom LEFT of the screen next to yellow account entry button, x=19%, y=90%. Red oval around that scan button, red arrow pointing there, label '3. QR 스캔'. IMPORTANT EVERY bank name, account name, account number, recipient and favorites must become unreadable blurred blocks. Everything else must be heavily gaussian-blurred: all private financial details, personal identities, status bar time, office surroundings, ads, and unrelated UI. The only sharp content should be the indicated generic clickable control plus its red annotation. Do not reproduce any personal text, names, digits, QR code, photos or balances. This is step 3 of five separate matching images, white/red annotation styling. Preserve the clickable target at its original location. No full original screenshot visible beneath an overlay: blur must be baked into pixels."
+    },
+    {
+      "step": 4,
+      "asset": "public/guides/kakaopay/step-4.png",
+      "prompt": "Use case: precise-object-edit. Edit the attached screenshot into one privacy-safe instructional image for a website. Keep the original portrait aspect ratio and exact interface geometry, without device frame or outside border. Only the bottom button labeled '나의 송금코드' near x=50%,y=91%. Red oval and red arrow pointing there, label '4. 나의 송금코드'. IMPORTANT the entire real-life camera background, monitor, office and desk must be heavily blurred into anonymous color fields. Everything else must be heavily gaussian-blurred: all private financial details, personal identities, status bar time, office surroundings, ads, and unrelated UI. The only sharp content should be the indicated generic clickable control plus its red annotation. Do not reproduce any personal text, names, digits, QR code, photos or balances. This is step 4 of five separate matching images, white/red annotation styling. Preserve the clickable target at its original location. No full original screenshot visible beneath an overlay: blur must be baked into pixels."
+    },
+    {
+      "step": 5,
+      "asset": "public/guides/kakaopay/step-5.png",
+      "prompt": "Use case: precise-object-edit. Edit the attached screenshot into one privacy-safe instructional image for a website. Keep the original portrait aspect ratio and exact interface geometry, without device frame or outside border. Only the button labeled '링크 복사' at x=70%,y=64%. Red oval tightly around that button and red arrow, label '5. 링크 복사'. IMPORTANT completely replace the entire central QR pattern AND profile photo with a solid neutral gray rounded block labeled '개인정보 보호', surrounded by a soft blurred edge. Absolutely no scannable QR or visible face. Everything else must be heavily gaussian-blurred: all private financial details, personal identities, status bar time, office surroundings, ads, and unrelated UI. The only sharp content should be the indicated generic clickable control plus its red annotation. Do not reproduce any personal text, names, digits, QR code, photos or balances. This is step 5 of five separate matching images, white/red annotation styling. Preserve the clickable target at its original location. No full original screenshot visible beneath an overlay: blur must be baked into pixels."
+    }
+  ]
+}

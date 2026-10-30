@@ -12,6 +12,8 @@ import { NoticesPanel } from "./notices";
 import { AdminPanel, DuesBanner } from "./admin";
 import { listPastEvents, setAttendance } from "@/app/extra";
 import { AuthSheet, CompleteProfileSheet, EventSheet, ProfileSheet } from "./sheets";
+import { ClubRules, EventOperations, MyClub } from "./club";
+import { cancelRegistration, getCancelQuote, getClubCapabilities } from "@/app/club";
 import { daysLeft, errText, fmtClock, fmtDate, fmtShort, GAME_LABEL, ntrpLabel, perHead, run, weekday, won, type Ev, type Me } from "./util";
 
 const HERO = "https://d8j0ntlcm91z4.cloudfront.net/user_37v9hge1XsR4EQQ1bvcBaDNhtel/hf_20261008_021947_f25de514-fb16-477b-89dc-81d058ac3cf0.png";
@@ -36,7 +38,8 @@ function Board() {
   const [toast, setToast] = useState<string | null>(null);
   const [focus, setFocus] = useState<number | null>(null);
   const [focusComments, setFocusComments] = useState(false);
-  const [tab, setTab] = useState<"events" | "notice" | "rank" | "members" | "admin">("events");
+  const [tab, setTab] = useState<"events" | "mine" | "notice" | "rank" | "members" | "admin">("events");
+  const clubQ = useQuery({ queryKey: ["club", "capabilities"], queryFn: () => run(getClubCapabilities()), retry: false });
   const [noticeFocus, setNoticeFocus] = useState<number | null>(null);
   const [monthSel, setMonthSel] = useState<string | null>(null);
   const [daySel, setDaySel] = useState<string | null>(null);
@@ -52,6 +55,7 @@ function Board() {
     if (id) setFocus(id);
     if (q.get("c")) setFocusComments(true);
     if (q.get("dues")) setTab("events");
+    if (q.get("tab") === "mine") setTab("mine");
     if (q.get("tab") === "notice") {
       setTab("notice");
       const n = Number(q.get("n"));
@@ -73,6 +77,9 @@ function Board() {
     void qc.invalidateQueries({ queryKey: ["pastEvents"] });
     void qc.invalidateQueries({ queryKey: ["me"] });
     void qc.invalidateQueries({ queryKey: ["rank"] });
+    void qc.invalidateQueries({ queryKey: ["club"] });
+    void qc.invalidateQueries({ queryKey: ["myEvents"] });
+    void qc.invalidateQueries({ queryKey: ["eventManagement"] });
   };
 
   const allGroups = useMemo(() => {
@@ -98,9 +105,20 @@ function Board() {
 
   async function act(ev: Ev, action: "join" | "decline") {
     if (!me) return setSheet({ kind: "auth" });
+    if (!clubQ.data) return setToast("새 참가 규칙의 DB 업데이트 확인이 필요해요. 운영자에게 문의해주세요.");
     try {
-      const s = await run(respond(ev.id, action));
-      setToast(s === "going" ? "참석으로 등록했어요" : s === "waiting" ? "자리가 차서 대기로 올렸어요" : "불참으로 바꿨어요");
+      let s: string;
+      if (action === "decline") {
+        const q = await run(getCancelQuote(ev.id));
+        const message = [`${ev.title} 신청을 취소할까요?`, q.amount > 0 ? `취소 벌칙 ${won(q.amount)}${q.reviewAllowed ? " 또는 당근리뷰" : ""}` : "취소 벌칙 없음", q.replacementRequired ? "호스트에게 미리 알리고 대참자를 직접 구해주세요." : "", q.refundPending ? "참가비는 자동 환불되지 않으며, 호스트와 환불·대참 정산을 확인해야 해요." : ""].filter(Boolean).join("\n");
+        if (!window.confirm(message)) return;
+        const reason = window.prompt("취소 사유를 적어주세요.");
+        if (!reason?.trim()) return;
+        s = await run(cancelRegistration(ev.id, reason));
+      } else {
+        s = await run(respond(ev.id, action));
+      }
+      setToast(s === "going" ? "참석이 확정됐어요" : s === "waiting" ? "자리 대기로 등록했어요. 아직 입금하지 마세요." : s === "payment_pending" ? "입금 대기로 등록했어요. 입금 전 호스트와 자리·금액을 확인해주세요." : "신청을 취소하고 관련자에게 알림을 남겼어요");
       refresh();
       if (s === "declined") void flushPromotions();
     } catch (e) {
@@ -165,8 +183,8 @@ function Board() {
           </div>
           <h1 className="mt-7 text-[26px] font-black leading-tight">🎾STEP UP 🎾 테니스 2030</h1>
           <p className="mt-1.5 text-[14px] text-white/80">✨하루를 바꾸는 가장 좋은 루틴 ☀️WAKE UP &amp; STEP UP!🎾</p>
-          <nav className="mt-5 inline-flex rounded-full bg-white/15 p-1 backdrop-blur" aria-label="화면 전환">
-            {([["events", "일정"], ["notice", "공지"], ["rank", "랭킹"], ["members", "멤버"], ...(me?.isAdmin ? [["admin", "운영"]] : [])] as [typeof tab, string][]).map(([k, l]) => (
+          <nav className="mt-5 flex flex-wrap gap-1 rounded-2xl bg-white/15 p-1 backdrop-blur" aria-label="화면 전환">
+            {([["events", "일정"], ["mine", "내 정모"], ["notice", "공지"], ["rank", "랭킹"], ["members", "멤버"], ...(me?.isAdmin ? [["admin", "운영"]] : [])] as [typeof tab, string][]).map(([k, l]) => (
               <button key={k} onClick={() => setTab(k)} className={`rounded-full px-3.5 py-1.5 text-[14px] font-bold transition ${tab === k ? "bg-white text-court-deep" : "text-white/85"}`}>
                 {l}
               </button>
@@ -175,7 +193,11 @@ function Board() {
         </div>
       </header>
 
-      {tab === "admin" ? (
+      {clubQ.isError && <p role="status" className="mx-auto mt-4 max-w-2xl rounded-xl bg-[#FFF6D6] px-4 py-3 text-[13px] text-ink">새 참가·입금 규칙을 적용 중이에요. 참가 신청·취소와 새 운영 기능은 업데이트 완료 후 이용해주세요.</p>}
+      {tab === "mine" ? (
+        <MyClub me={me} onNeedLogin={() => setSheet({ kind: "auth" })} onToast={setToast}
+          renderEvent={(ev, past) => <EventCard ev={ev} me={me} past={past} focused={false} focusComments={false} onAct={act} onNeedLogin={() => setSheet({ kind: "auth" })} onToast={setToast} onChanged={refresh} onEdit={() => setSheet({ kind: "event", ev })} onDelete={() => remove(ev)} onShare={() => share(ev)} />} />
+      ) : tab === "admin" ? (
         <AdminPanel me={me} onToast={setToast} />
       ) : tab === "notice" ? (
         <NoticesPanel me={me} focusId={noticeFocus} onNeedLogin={() => setSheet({ kind: "auth" })} onToast={setToast} />
@@ -260,7 +282,7 @@ function Board() {
         </main>
       )}
 
-      {tab === "events" && <button onClick={() => setSheet(me ? { kind: "event" } : { kind: "auth" })}
+      {tab === "events" && <button disabled={meQ.isLoading} onClick={() => setSheet(me ? { kind: "event" } : { kind: "auth" })}
         className="fixed bottom-6 left-1/2 z-40 flex -translate-x-1/2 items-center gap-2 rounded-full bg-clay px-6 py-4 text-[15px] font-bold text-white shadow-[0_10px_30px_-8px_rgba(210,97,44,0.7)] transition active:scale-95">
         <span className="text-[20px] leading-none">+</span> 코트 잡았어요
       </button>}
@@ -270,8 +292,8 @@ function Board() {
       {me?.needsProfile && <CompleteProfileSheet me={me} onDone={() => { refresh(); setToast("닉네임이 바뀌었어요"); }} />}
       {sheet?.kind === "auth" && <AuthSheet onClose={() => setSheet(null)} onDone={() => { setSheet(null); refresh(); setToast("반가워요!"); }} />}
       {sheet?.kind === "profile" && me && <ProfileSheet me={me} onClose={() => setSheet(null)} onDone={refresh} />}
-      {sheet?.kind === "event" && (
-        <EventSheet initial={sheet.ev} defaults={{ payLink: (me as unknown as { lastPayLink?: string })?.lastPayLink ?? "", account: (me as unknown as { lastAccount?: string })?.lastAccount ?? "" }} onClose={() => setSheet(null)}
+      {sheet?.kind === "event" && me && (
+        <EventSheet key={`${me.id}:${sheet.ev?.id ?? "new"}`} userId={me.id} initial={sheet.ev} defaults={{ payLink: (me as unknown as { lastPayLink?: string })?.lastPayLink ?? "", account: (me as unknown as { lastAccount?: string })?.lastAccount ?? "" }} onClose={() => setSheet(null)}
           onDone={() => { const edited = !!sheet.ev; setSheet(null); refresh(); if (edited) void flushPromotions(); setToast(edited ? "고쳤어요" : "일정을 올렸어요. 공유 버튼으로 방에 알려주세요"); }} />
       )}
     </div>
@@ -292,6 +314,7 @@ function EventCard({ ev, me, past, focused, focusComments, onAct, onEdit, onDele
   const [talk, setTalk] = useState(focusComments);
   const going = ev.people.filter((p) => p.status === "going");
   const waiting = ev.people.filter((p) => p.status === "waiting");
+  const pending = ev.people.filter((p) => p.status === "payment_pending");
   const declined = ev.people.filter((p) => p.status === "declined");
   const mine = me ? ev.people.find((p) => p.id === me.id) : undefined;
   const mixed = ev.gameType === "mixed";
@@ -337,20 +360,19 @@ function EventCard({ ev, me, past, focused, focusComments, onAct, onEdit, onDele
           <span className="rounded-md bg-court px-2 py-1 text-white">{GAME_LABEL[ev.gameType]}{mixed ? ` 남${ev.maleCap}·여${ev.femaleCap}` : ""}</span>
           {ntrp && <span className="rounded-md bg-ball px-2 py-1 text-court-deep">{ntrp}</span>}
           <span className="rounded-md bg-paper px-2 py-1 text-mute">📍 {ev.court}</span>
-          {ev.cancelHours > 0 && <span className="rounded-md bg-paper px-2 py-1 text-mute">취소 {ev.cancelHours}시간 전까지</span>}
         </div>
-        <CostLine ev={ev} going={going.length} />
-        <PayBox ev={ev} going={going.length} onToast={onToast} />
+        <CostLine ev={ev} />
+        <PayBox ev={ev} onToast={onToast} />
         {ev.note && <p className="mt-3 whitespace-pre-wrap rounded-xl bg-paper px-3 py-2 text-[14px] text-ink/80">{ev.note}</p>}
 
         {!past && <div className="mt-4 flex items-center gap-2">
           <button onClick={() => onAct(ev, "join")}
             className={`rounded-full border-2 px-5 py-2.5 text-[15px] font-bold transition ${mine?.status === "going" ? "border-court bg-court text-white" : mine?.status === "waiting" ? "border-clay bg-[#FCEDE6] text-clay" : "border-ink/70 text-ink hover:border-court hover:text-court"}`}>
-            {mine?.status === "going" ? "참석 ✓" : mine?.status === "waiting" ? `대기 ${myQueue}번` : myFull ? "대기 신청" : "참석"}
+            {mine?.status === "going" ? "참석 확정 ✓" : mine?.status === "payment_pending" ? "입금 대기" : mine?.status === "waiting" ? `자리 대기 ${myQueue}번` : myFull ? "자리 대기 신청" : "참가 신청"}
           </button>
           <button onClick={() => onAct(ev, "decline")}
             className={`rounded-full px-5 py-2.5 text-[15px] font-semibold transition ${mine?.status === "declined" ? "bg-ink text-white" : "bg-paper text-mute hover:bg-line"}`}>
-            불참
+            신청 취소
           </button>
           <button onClick={onShare} className="ml-auto grid h-10 w-10 place-items-center rounded-full text-mute hover:bg-paper" aria-label="오픈채팅방에 공유" title="오픈채팅방에 공유">↗</button>
         </div>}
@@ -363,6 +385,7 @@ function EventCard({ ev, me, past, focused, focusComments, onAct, onEdit, onDele
         <button onClick={() => setOpen((o) => !o)} className="flex min-w-0 flex-1 items-center justify-end gap-3 text-[13px] text-mute" aria-expanded={open}>
           {mixed ? <span>남 {goingM}/{ev.maleCap} · 여 {goingF}/{ev.femaleCap} 참석</span> : <span>{going.length}명 참석</span>}
           {waiting.length > 0 && <span className="font-semibold text-clay">{waiting.length}명 대기</span>}
+          {pending.length > 0 && <span className="font-semibold text-court">{pending.length}명 입금 대기</span>}
           <span>{declined.length}명 불참</span>
           <span aria-hidden>{open ? "▲" : "▼"}</span>
         </button>
@@ -392,9 +415,12 @@ function EventCard({ ev, me, past, focused, focusComments, onAct, onEdit, onDele
               </>
             ) : <PeopleRow label="참석" people={going} />}
             {!mixed && waiting.length > 0 && <PeopleRow label="대기" people={waiting} numbered />}
+            {pending.length > 0 && <PeopleRow label="입금 대기" people={pending} />}
             {declined.length > 0 && <PeopleRow label="불참" people={declined} muted />}
+            <ClubRules />
           </div>
         )}
+        {canManage && me && <EventOperations ev={ev} me={me} onToast={onToast} />}
       </div>
     </article>
   );
@@ -417,7 +443,7 @@ function PeopleRow({ label, people, numbered, muted }: { label: string; people: 
   );
 }
 
-function CostLine({ ev, going }: { ev: Ev; going: number }) {
+function CostLine({ ev }: { ev: Ev }) {
   const total = ev.courtFee + ev.ballFee;
   if (total <= 0) return null;
   const parts = [ev.courtFee > 0 ? `코트 ${won(ev.courtFee)}` : null, ev.ballFee > 0 ? `캔볼 ${won(ev.ballFee)}` : null].filter(Boolean);
@@ -428,10 +454,10 @@ function CostLine({ ev, going }: { ev: Ev; going: number }) {
         <span className="font-semibold text-ink">합계 {won(total)}</span>
       </div>
       <div className="mt-1.5 flex items-baseline justify-between gap-2">
-        <span className="text-[13px] text-mute">{going > 0 ? `지금 참석 ${going}명 기준` : "아직 참석자 없음"}</span>
-        <span className="text-[17px] font-black text-court-deep">{going > 0 ? `1인 ${won(perHead(total, going))}` : "-"}</span>
+        <span className="text-[13px] text-mute">정원 {ev.capacity}명 기준 참가비</span>
+        <span className="text-[17px] font-black text-court-deep">1인 {won(perHead(total, ev.capacity))}</span>
       </div>
-      {going !== ev.capacity && <p className="mt-0.5 text-right text-[12px] text-mute">정원 {ev.capacity}명 다 차면 1인 {won(perHead(total, ev.capacity))}</p>}
+      <p className="mt-0.5 text-right text-[12px] text-mute">입금 전 호스트에게 자리와 금액을 확인해주세요.</p>
     </div>
   );
 }
@@ -605,6 +631,7 @@ function AttendRow({ ev, people, canCheck, onToast, onChanged }: {
   ev: Ev; people: Ev["people"]; canCheck: boolean; onToast: (m: string) => void; onChanged: () => void;
 }) {
   async function mark(uid: number, v: boolean | null) {
+    if (v === false && !window.confirm("무단 불참 벌칙 15,000원 또는 당근리뷰를 등록할까요? 앞으로 신청한 정모가 취소되고 운영진의 납부·이행 확인까지 참가가 제한돼요.")) return;
     try {
       await run(setAttendance(ev.id, uid, v));
       onChanged();
@@ -642,17 +669,17 @@ function AttendRow({ ev, people, canCheck, onToast, onChanged }: {
   );
 }
 
-function PayBox({ ev, going, onToast }: { ev: Ev; going: number; onToast: (m: string) => void }) {
+function PayBox({ ev, onToast }: { ev: Ev; onToast: (m: string) => void }) {
   const p = ev as unknown as { payLink?: string | null; account?: string | null };
   if (!p.payLink && !p.account) return null;
   const total = ev.courtFee + ev.ballFee;
-  const each = total > 0 ? perHead(total, going > 0 ? going : ev.capacity) : 0;
+  const each = total > 0 ? perHead(total, ev.capacity) : 0;
   const copy = (t: string, msg: string) => { void navigator.clipboard.writeText(t).then(() => onToast(msg)).catch(() => window.prompt("복사하세요", t)); };
   return (
     <div className="mt-2 rounded-xl bg-[#FFFBE0] px-3 py-2.5 ring-1 ring-[#F2E58C]">
       {each > 0 && (
         <div className="flex items-center justify-between gap-2">
-          <span className="text-[13px] text-ink/70">보낼 금액 <b className="text-[15px] text-ink">{won(each)}</b>{going > 0 ? "" : " (정원 기준)"}</span>
+          <span className="text-[13px] text-ink/70">1인 참가비 <b className="text-[15px] text-ink">{won(each)}</b> (정원 기준)</span>
           <button onClick={() => copy(String(each), "금액을 복사했어요")} className="rounded-full bg-white px-2.5 py-0.5 text-[12px] font-bold text-mute ring-1 ring-line">금액 복사</button>
         </div>
       )}
@@ -662,6 +689,7 @@ function PayBox({ ev, going, onToast }: { ev: Ev; going: number; onToast: (m: st
           💛 카카오페이로 송금하기
         </a>
       )}
+      {p.payLink && <p className="mt-2 text-[12px] text-ink/70">카카오페이는 휴대폰에서 확인해주세요. 링크가 열리지 않으면 호스트에게 계좌를 요청하세요. 송금 후 내 정모에서 입금 확인을 요청해야 해요.</p>}
       {p.account && (
         <div className={`flex items-center justify-between gap-2 ${p.payLink || each > 0 ? "mt-2" : ""}`}>
           <span className="min-w-0 truncate text-[13px] text-ink/80">🏦 {p.account}</span>

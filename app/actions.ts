@@ -2,6 +2,7 @@
 
 import { cookies } from "next/headers";
 import { after } from "next/server";
+import { flushClubNotifications } from "@/lib/club-push";
 import webpush from "web-push";
 
 const URL = process.env.SUPABASE_URL ?? "https://ouawzqhaioscsqcysago.supabase.co";
@@ -10,7 +11,7 @@ const COOKIE = "rb_session";
 
 export type Result<T> = { ok: true; data: T } | { ok: false; error: string };
 
-export type Person = { id: number; nickname: string; gender: "M" | "F"; ntrp: number; status: "going" | "waiting" | "declined" };
+export type Person = { id: number; nickname: string; gender: "M" | "F"; ntrp: number; status: "going" | "waiting" | "payment_pending" | "declined" };
 export type Comment = { id: number; userId: number; nickname: string; body: string; createdAt: string };
 export type Ev = {
   id: number; hostId: number; hostName: string; title: string; court: string; date: string;
@@ -48,10 +49,12 @@ async function rpc<T>(fn: string, args: Record<string, unknown>): Promise<Result
       headers: { apikey: KEY, Authorization: `Bearer ${KEY}`, "Content-Type": "application/json" },
       body: JSON.stringify(args),
       cache: "no-store",
+      signal: AbortSignal.timeout(15000),
     });
     const text = await res.text();
     const body = text ? JSON.parse(text) : null;
     if (!res.ok) return { ok: false, error: (body && body.message) || "문제가 생겼어요. 다시 시도해주세요." };
+    if (["rb_update_event", "rb_delete_event", "rb_admin_ban"].includes(fn)) after(() => flushClubNotifications());
     return { ok: true, data: body as T };
   } catch {
     return { ok: false, error: "서버에 연결하지 못했어요. 잠시 뒤 다시 시도해주세요." };
@@ -64,7 +67,7 @@ async function token(): Promise<string | null> {
 
 async function saveToken(t: string) {
   // Browsers cap cookie lifetime at 400 days; getMe refreshes it on every visit so the login never lapses.
-  (await cookies()).set(COOKIE, t, { httpOnly: true, secure: true, sameSite: "lax", path: "/", maxAge: 60 * 60 * 24 * 400 });
+  (await cookies()).set(COOKIE, t, { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "lax", path: "/", maxAge: 60 * 60 * 24 * 400 });
 }
 
 export async function getMe(): Promise<Result<MeData | null>> {
@@ -152,7 +155,7 @@ export async function listEvents() {
 }
 
 export async function createEvent(input: EventInput): Promise<Result<number>> {
-  const r = await rpc<number>("rb_create_event", { p_token: await token(), p: input });
+  const r = await rpc<number>("rb_create_event", { p_token: await token(), p: { ...input, title: "" } });
   if (r.ok) {
     const id = r.data;
     after(() => pushFrom("rb_push_targets_event", { p_event_id: id }));
@@ -161,7 +164,7 @@ export async function createEvent(input: EventInput): Promise<Result<number>> {
 }
 
 export async function updateEvent(id: number, input: EventInput) {
-  return rpc<null>("rb_update_event", { p_token: await token(), p_id: id, p: input });
+  return rpc<null>("rb_update_event", { p_token: await token(), p_id: id, p: { ...input, title: "" } });
 }
 
 export async function deleteEvent(id: number) {
@@ -169,7 +172,7 @@ export async function deleteEvent(id: number) {
 }
 
 export async function respond(id: number, action: "join" | "decline") {
-  return rpc<"going" | "waiting" | "declined">("rb_respond", { p_token: await token(), p_id: id, p_action: action });
+  return rpc<"going" | "waiting" | "payment_pending" | "declined">("rb_respond", { p_token: await token(), p_id: id, p_action: action });
 }
 
 export async function getRanking(period: "all" | "month") {

@@ -62,7 +62,7 @@ export function MembersPanel({ me, onNeedLogin, onToast }: { me: Me; onNeedLogin
           <p className="mt-0.5 text-[13px] text-mute">{me.isAdmin ? "이름을 누르면 NTRP 변경, 경고, 탈퇴 처리를 할 수 있어요. 탈퇴자는 운영 탭에서 봐요." : "같이 치는 멤버들이에요."}</p>
         </div>
       </div>
-      <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="이름, 지역으로 찾기"
+      <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="이름, 지하철역으로 찾기"
         className="mt-4 w-full rounded-xl border border-line bg-white px-3.5 py-3 text-[15px] outline-none focus:border-court" />
 
       {me.isAdmin && q.data && (

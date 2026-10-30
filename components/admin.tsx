@@ -9,6 +9,7 @@ import {
 import { adminUnban } from "@/app/actions";
 import { getAdminSettings, saveAdminSettings, type PushTexts } from "@/app/extra";
 import { Sheet } from "./sheets";
+import { ClubAdministration } from "./club";
 import { errText, kstToday, run, won, type Me } from "./util";
 
 const field = "w-full rounded-xl border border-line bg-paper px-3.5 py-3 text-[15px] text-ink outline-none focus:border-court focus:bg-white";
@@ -99,17 +100,17 @@ export function DuesBanner({ me, onToast }: { me: Me; onToast: (m: string) => vo
 /* ---------- admin tab ---------- */
 
 export function AdminPanel({ me, onToast }: { me: Me; onToast: (m: string) => void }) {
-  const [view, setView] = useState<"dues" | "left" | "settings">("dues");
+  const [view, setView] = useState<"dues" | "club" | "left" | "settings">("dues");
   if (!me?.isAdmin) return <main className="mx-auto max-w-2xl px-4 pt-10 text-center text-mute">운영진만 볼 수 있어요.</main>;
   return (
     <main className="mx-auto max-w-2xl px-4 pt-6">
       <p className="text-[12px] font-bold text-court-deep">🔒 운영진 전용</p>
-      <div className="mt-2 grid grid-cols-3 gap-1 rounded-2xl bg-white p-1 ring-1 ring-line">
-        {([["dues", "💳 회비"], ["left", "🚪 탈퇴자"], ["settings", "⚙️ 설정"]] as const).map(([k, l]) => (
+      <div className="mt-2 grid grid-cols-4 gap-1 rounded-2xl bg-white p-1 ring-1 ring-line">
+        {([["dues", "💳 회비"], ["club", "정모 운영"], ["left", "🚪 탈퇴자"], ["settings", "⚙️ 설정"]] as const).map(([k, l]) => (
           <button key={k} onClick={() => setView(k)} className={`rounded-xl py-2.5 text-[14px] font-bold ${view === k ? "bg-court-deep text-white" : "text-mute"}`}>{l}</button>
         ))}
       </div>
-      {view === "dues" ? <DuesManager onToast={onToast} /> : view === "left" ? <LeftList onToast={onToast} /> : <SettingsView onToast={onToast} />}
+      {view === "dues" ? <DuesManager onToast={onToast} /> : view === "club" ? <ClubAdministration onToast={onToast} /> : view === "left" ? <LeftList onToast={onToast} /> : <SettingsView onToast={onToast} />}
     </main>
   );
 }
@@ -333,14 +334,11 @@ function DuesConfigSheet({ initial, onClose, onSaved }: { initial: DuesConfig; o
           <label className={label}>입금 계좌 (멤버 화면에 보여요)</label>
           <input className={field} value={c.account} onChange={(e) => set("account", e.target.value)} maxLength={100} placeholder="카카오뱅크 3333-00-0000000 홍길동" />
         </div>
-        <label className="flex items-start gap-2 text-[14px]">
-          <input type="checkbox" checked={c.exemptJoinMonth} onChange={(e) => set("exemptJoinMonth", e.target.checked)} className="mt-0.5 h-5 w-5 accent-[#1c6a50]" />
-          <span><b>소모임 가입한 달은 면제</b><br /><span className="text-[12px] text-mute">가입한 다음 달부터 회비 대상이 돼요</span></span>
-        </label>
-        <label className="flex items-start gap-2 text-[14px]">
-          <input type="checkbox" checked={c.exemptAdmins} onChange={(e) => set("exemptAdmins", e.target.checked)} className="mt-0.5 h-5 w-5 accent-[#1c6a50]" />
-          <span><b>운영진 회비 면제</b></span>
-        </label>
+        <div className="rounded-xl bg-paper p-3 text-[13px] leading-relaxed">
+          <b>회비 면제 기준</b>
+          <p>말일−10일부터 가입한 회원의 가입 월 · 운영진 · 해당 월 종료된 정모 호스트 3회 이상 · 기존 1년권 적용월</p>
+          <p className="mt-1 text-[12px] text-mute">면제 대상과 1년권 기간은 운영 → 정모 운영 → 회비 면제에서 관리해요.</p>
+        </div>
       </div>
       {err && <p className="mt-3 rounded-lg bg-[#FCEDE6] px-3 py-2 text-[13px] font-medium text-clay">{err}</p>}
       <button onClick={save} disabled={busy} className="mt-5 w-full rounded-2xl bg-court py-4 text-[16px] font-bold text-white disabled:opacity-40">

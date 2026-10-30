@@ -1,6 +1,8 @@
 "use server";
 
 import { cookies } from "next/headers";
+import { after } from "next/server";
+import { flushClubNotifications } from "@/lib/club-push";
 import type { Ev, Result } from "./actions";
 
 const URL = process.env.SUPABASE_URL ?? "https://ouawzqhaioscsqcysago.supabase.co";
@@ -21,6 +23,7 @@ async function rpc<T>(fn: string, args: Record<string, unknown>): Promise<Result
     const text = await res.text();
     const body = text ? JSON.parse(text) : null;
     if (!res.ok) return { ok: false, error: (body && body.message) || "문제가 생겼어요. 다시 시도해주세요." };
+    if (["rb_set_attendance", "rb_leave"].includes(fn)) after(() => flushClubNotifications());
     return { ok: true, data: body as T };
   } catch {
     return { ok: false, error: "서버에 연결하지 못했어요. 잠시 뒤 다시 시도해주세요." };

@@ -1,6 +1,9 @@
 node_modules
+.pnpm-store
 .next
 .vercel
 .env
 .env*.local
+supabase/*.local.sql
 next-env.d.ts
+/output/

@@ -1,18 +1,28 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { useRef, useState, type Dispatch, type ReactNode, type SetStateAction } from "react";
 import { completeProfile, createEvent, login, logout, setFreq, signup, updateEvent, type EventInput } from "@/app/actions";
 import { PushToggle } from "./push";
+import { ClubProfile } from "./club";
+import { KakaoPayGuide } from "./KakaoPayGuide";
+import { useSessionDraft } from "./useSessionDraft";
 import { leaveClub, setPushPrefs, type PushPrefs } from "@/app/extra";
-import { errText, FREQS, freqIcon, kstToday, NTRP_GUIDE, NTRP_STEPS, perHead, run, won, type Ev, type Freq, type Me } from "./util";
+import { errText, FREQS, fmtShort, freqIcon, kstToday, NTRP_GUIDE, NTRP_STEPS, perHead, run, won, type Ev, type Freq, type Me } from "./util";
 
 export function Sheet({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
+  const startedOnBackdrop = useRef(false);
+  const endedOnBackdrop = useRef(false);
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-[#0E2A20]/55 sm:items-center" onClick={onClose}>
+    <div data-sheet-backdrop className="fixed inset-0 z-50 flex items-end justify-center bg-[#0E2A20]/55 sm:items-center"
+      onPointerDown={(e) => { startedOnBackdrop.current = e.target === e.currentTarget; endedOnBackdrop.current = false; }}
+      onPointerUp={(e) => { endedOnBackdrop.current = e.target === e.currentTarget; }}
+      onPointerCancel={() => { startedOnBackdrop.current = false; endedOnBackdrop.current = false; }}
+      onClick={(e) => { if (e.target === e.currentTarget && startedOnBackdrop.current && endedOnBackdrop.current) onClose(); startedOnBackdrop.current = false; endedOnBackdrop.current = false; }}>
       <div
         className="max-h-[92dvh] w-full max-w-lg overflow-y-auto rounded-t-[28px] bg-white px-5 pb-8 pt-4 shadow-2xl sm:rounded-[28px]"
         onClick={(e) => e.stopPropagation()}
         role="dialog"
+        aria-modal="true"
         aria-label={title}
       >
         <div className="mx-auto mb-3 h-1.5 w-10 rounded-full bg-line sm:hidden" />
@@ -44,7 +54,24 @@ function Seg<T extends string>({ value, options, onChange }: { value: T; options
 
 function ErrorLine({ msg }: { msg: string | null }) {
   if (!msg) return null;
-  return <p className="mt-3 rounded-lg bg-[#FCEDE6] px-3 py-2 text-[13px] font-medium text-clay">{msg}</p>;
+  return <p role="alert" className="mt-3 rounded-lg bg-[#FCEDE6] px-3 py-2 text-[13px] font-medium text-clay">{msg}</p>;
+}
+
+type FormIssue = { field: string; message: string };
+function focusIssue(id: string) {
+  const target = document.getElementById(id);
+  target?.scrollIntoView({ behavior: "smooth", block: "center" });
+  target?.focus({ preventScroll: true });
+}
+function FieldIssue({ issue, id }: { issue?: FormIssue; id: string }) {
+  return issue ? <p id={id} className="mt-1 text-[12px] font-semibold text-clay">{issue.message}</p> : null;
+}
+function ValidationSummary({ issues, prefix }: { issues: FormIssue[]; prefix: string }) {
+  if (!issues.length) return null;
+  return <div role="alert" className="mt-4 rounded-xl bg-[#FCEDE6] p-3 text-[13px] text-clay"><p className="font-bold">아래 항목을 확인해주세요.</p><ul className="mt-1 list-inside list-disc space-y-1">{issues.map(x => <li key={x.field}><button type="button" className="text-left underline underline-offset-2" onClick={() => focusIssue(`${prefix}-${x.field}`)}>{x.message}</button></li>)}</ul></div>;
+}
+function DraftNotice({ restored, onReset, pin = false }: { restored: boolean; onReset: () => void; pin?: boolean }) {
+  return <div className="mt-3 flex items-start justify-between gap-2 rounded-xl bg-paper p-3 text-[12px] text-mute"><p>{restored ? "작성 중인 내용을 불러왔어요." : "닫았다가 다시 열어도 작성 내용이 유지돼요."}<br />이 탭에서 최대 하루 동안 임시 저장해요.{pin && " PIN은 다시 입력해주세요."}</p><button type="button" onClick={onReset} className="shrink-0 font-semibold underline underline-offset-2">입력 초기화</button></div>;
 }
 
 const YEARS = Array.from({ length: 2012 - 1950 + 1 }, (_, i) => 2012 - i);
@@ -52,14 +79,14 @@ const YEARS = Array.from({ length: 2012 - 1950 + 1 }, (_, i) => 2012 - i);
 export function SomoimPicker({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   const today = new Date(Date.now() + 9 * 3600000).toISOString().slice(0, 10);
   return (
-    <input type="date" className={field} value={value} min="2015-01-01" max={today}
+    <input type="date" aria-label="소모임 모임 가입일" className={field} value={value} min="2015-01-01" max={today}
       onChange={(e) => onChange(e.target.value)} />
   );
 }
 const yy = (y: number) => String(y).slice(2);
 
 export function nickPreview(name: string, year: number | "", region: string, gender: "M" | "F", ntrp: number | null, freq: Freq | null) {
-  const parts = [name.trim() || "이름", year ? yy(year) : "00", region.trim() || "지역", gender === "M" ? "남" : "여"];
+  const parts = [name.trim() || "이름", year ? yy(year) : "00", region.trim() || "지하철역", gender === "M" ? "남" : "여"];
   if (ntrp != null) parts.push(ntrp.toFixed(1) + freqIcon(freq));
   return parts.join("/");
 }
@@ -107,30 +134,53 @@ function NtrpPicker({ value, onChange }: { value: number | null; onChange: (n: n
   );
 }
 
+type AuthDraft = { mode: "login" | "signup"; name: string; year: number | ""; region: string; gender: "M" | "F"; ntrp: number | null; freq: Freq | null; somoim: string; legacy: boolean };
+const emptyAuth = (): AuthDraft => ({ mode: "login", name: "", year: "", region: "", gender: "M", ntrp: null, freq: null, somoim: "", legacy: false });
+function isAuthDraft(value: unknown): value is AuthDraft {
+  const d = value as AuthDraft | null;
+  return !!d && ["login", "signup"].includes(d.mode) && [d.name, d.region, d.somoim].every(x => typeof x === "string") && (d.year === "" || YEARS.includes(d.year)) && ["M", "F"].includes(d.gender) && (d.ntrp === null || NTRP_STEPS.includes(d.ntrp)) && (d.freq === null || FREQS.some(f => f.v === d.freq)) && typeof d.legacy === "boolean";
+}
+
 export function AuthSheet({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
-  const [mode, setMode] = useState<"login" | "signup">("login");
-  const [name, setName] = useState("");
-  const [year, setYear] = useState<number | "">("");
-  const [region, setRegion] = useState("");
-  const [gender, setGender] = useState<"M" | "F">("M");
-  const [ntrp, setNtrp] = useState<number | null>(null);
-  const [freq, setFreqV] = useState<Freq | null>(null);
-  const [somoim, setSomoim] = useState("");
+  const { value: draft, setValue: setDraft, restored, clearDraft, resetDraft } = useSessionDraft("rb:auth-draft:v1", emptyAuth, isAuthDraft);
+  const { mode, name, year, region, gender, ntrp, freq, somoim, legacy } = draft;
+  const change = <K extends keyof AuthDraft>(key: K, value: AuthDraft[K]) => setDraft(d => ({ ...d, [key]: value }));
+  const setName = (v: string) => change("name", v);
+  const setYear = (v: number | "") => change("year", v);
+  const setRegion = (v: string) => change("region", v);
+  const setGender = (v: "M" | "F") => change("gender", v);
+  const setNtrp = (v: number) => change("ntrp", v);
+  const setFreqV = (v: Freq) => change("freq", v);
+  const setSomoim = (v: string) => change("somoim", v);
   const [pin, setPin] = useState("");
-  const [legacy, setLegacy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [attempted, setAttempted] = useState(false);
 
-  const ready = mode === "login"
-    ? !!name.trim() && (legacy || !!year) && pin.length === 4
-    : !!name.trim() && !!year && !!region.trim() && ntrp != null && freq != null && !!somoim && pin.length === 4;
+  const issues: FormIssue[] = [];
+  if (!name.trim()) issues.push({ field: "name", message: legacy && mode === "login" ? "예전 닉네임을 입력해주세요." : "이름을 입력해주세요." });
+  if (!year && !(mode === "login" && legacy)) issues.push({ field: "year", message: "출생연도를 선택해주세요." });
+  if (mode === "signup") {
+    if (!region.trim()) issues.push({ field: "region", message: "지하철역을 입력해주세요." });
+    else if (!region.trim().endsWith("역") || region.trim().length < 2) issues.push({ field: "region", message: "지하철역 이름을 역까지 입력해주세요. 예: 삼전역" });
+    if (ntrp === null) issues.push({ field: "ntrp", message: "NTRP를 선택해주세요." });
+    if (freq === null) issues.push({ field: "freq", message: "실외코트 활동 빈도를 선택해주세요." });
+    if (!somoim) issues.push({ field: "somoim", message: "소모임 가입일을 선택해주세요." });
+    else if (somoim > kstToday()) issues.push({ field: "somoim", message: "소모임 가입일은 오늘까지 선택할 수 있어요." });
+  }
+  if (pin.length !== 4) issues.push({ field: "pin", message: "PIN 숫자 4자리를 입력해주세요." });
+  const ready = issues.length === 0;
+  const issueFor = (field: string) => attempted ? issues.find(x => x.field === field) : undefined;
 
   async function submit() {
+    setAttempted(true);
+    if (!ready) { setErr(null); focusIssue(`auth-${issues[0].field}`); return; }
     setBusy(true);
     setErr(null);
     try {
       if (mode === "login") await run(login(name, legacy || !year ? "" : yy(year), pin));
       else await run(signup({ name, yy: yy(year as number), region, gender, ntrp: ntrp as number, freq: freq as Freq, somoim, pin }));
+      clearDraft();
       onDone();
     } catch (e) {
       setErr(errText(e));
@@ -140,53 +190,61 @@ export function AuthSheet({ onClose, onDone }: { onClose: () => void; onDone: ()
   }
 
   return (
-    <Sheet title={mode === "login" ? "로그인" : "처음 오셨나요? 가입하기"} onClose={onClose}>
-      <Seg value={mode} onChange={(m) => { setMode(m); setErr(null); }} options={[["login", "로그인"], ["signup", "가입"]]} />
+    <Sheet title={mode === "login" ? "로그인" : "처음 오셨나요? 가입하기"} onClose={() => { if (!busy) onClose(); }}>
+      <Seg value={mode} onChange={(m) => { change("mode", m); setErr(null); setAttempted(false); }} options={[["login", "로그인"], ["signup", "가입"]]} />
+      <DraftNotice restored={restored} pin onReset={() => { resetDraft(); change("mode", mode); setPin(""); setErr(null); setAttempted(false); }} />
       <div className="mt-4 space-y-4">
         <div className={legacy && mode === "login" ? "" : "grid grid-cols-[1fr_auto] gap-2"}>
           <div>
-            <label className={label}>{legacy && mode === "login" ? "예전 닉네임 (전체 그대로)" : "이름"}</label>
-            <input className={field} value={name} onChange={(e) => setName(e.target.value)} maxLength={legacy ? 40 : 10} autoComplete="name" />
+            <label htmlFor="auth-name" className={label}>{legacy && mode === "login" ? "예전 닉네임 (전체 그대로)" : "이름"}</label>
+            <input id="auth-name" aria-invalid={!!issueFor("name")} aria-describedby="auth-name-error" className={field} value={name} onChange={(e) => setName(e.target.value)} maxLength={legacy ? 40 : 10} autoComplete="name" />
+            <FieldIssue id="auth-name-error" issue={issueFor("name")} />
           </div>
           {!(legacy && mode === "login") && (
             <div>
-              <label className={label}>출생연도</label>
-              <select className={`${field} w-32`} value={year} onChange={(e) => setYear(e.target.value ? Number(e.target.value) : "")}>
+              <label htmlFor="auth-year" className={label}>출생연도</label>
+              <select id="auth-year" aria-invalid={!!issueFor("year")} aria-describedby="auth-year-error" className={`${field} w-32`} value={year} onChange={(e) => setYear(e.target.value ? Number(e.target.value) : "")}>
                 <option value="">선택</option>
                 {YEARS.map((y) => <option key={y} value={y}>{y}년생</option>)}
               </select>
+              <FieldIssue id="auth-year-error" issue={issueFor("year")} />
             </div>
           )}
         </div>
         {mode === "signup" && (
           <>
             <div>
-              <label className={label}>지역 (지하철역 또는 동)</label>
-              <input className={field} value={region} onChange={(e) => setRegion(e.target.value.replace(/[/]/g, ""))} maxLength={12} placeholder="삼전역 / 잠실동" />
+              <label htmlFor="auth-region" className={label}>지하철역</label>
+              <input id="auth-region" aria-invalid={!!issueFor("region")} aria-describedby="auth-region-error" className={field} value={region} onChange={(e) => setRegion(e.target.value.replace(/[/]/g, ""))} maxLength={12} placeholder="예: 삼전역" />
+              <FieldIssue id="auth-region-error" issue={issueFor("region")} />
             </div>
             <div>
               <label className={label}>성별</label>
               <Seg value={gender} onChange={setGender} options={[["M", "남"], ["F", "여"]]} />
             </div>
-            <div>
+            <div id="auth-ntrp" tabIndex={-1} aria-describedby="auth-ntrp-error">
               <label className={label}>NTRP</label>
               <NtrpPicker value={ntrp} onChange={setNtrp} />
+              <FieldIssue id="auth-ntrp-error" issue={issueFor("ntrp")} />
             </div>
-            <div>
+            <div id="auth-freq" tabIndex={-1} aria-describedby="auth-freq-error">
               <label className={label}>실외코트 활동 빈도</label>
               <FreqPicker value={freq} onChange={setFreqV} />
+              <FieldIssue id="auth-freq-error" issue={issueFor("freq")} />
             </div>
-            <div>
+            <div id="auth-somoim" tabIndex={-1} aria-describedby="auth-somoim-error">
               <label className={label}>소모임 모임 가입일</label>
               <SomoimPicker value={somoim} onChange={setSomoim} />
+              <FieldIssue id="auth-somoim-error" issue={issueFor("somoim")} />
               <p className="mt-1.5 text-[12px] text-mute">소모임 앱에서 우리 모임에 가입한 날짜예요. 활동 기록의 기준이 돼요.</p>
             </div>
           </>
         )}
         <div>
-          <label className={label}>PIN 숫자 4자리</label>
-          <input className={`${field} tracking-[0.6em]`} value={pin} onChange={(e) => setPin(e.target.value.replace(/[^0-9]/g, "").slice(0, 4))}
+          <label htmlFor="auth-pin" className={label}>PIN 숫자 4자리</label>
+          <input id="auth-pin" aria-invalid={!!issueFor("pin")} aria-describedby="auth-pin-error" className={`${field} tracking-[0.6em]`} value={pin} onChange={(e) => setPin(e.target.value.replace(/[^0-9]/g, "").slice(0, 4))}
             inputMode="numeric" type="password" autoComplete={mode === "login" ? "current-password" : "new-password"} />
+          <FieldIssue id="auth-pin-error" issue={issueFor("pin")} />
         </div>
         {mode === "signup" && (
           <div className="rounded-xl border border-line px-3 py-2.5">
@@ -195,14 +253,15 @@ export function AuthSheet({ onClose, onDone }: { onClose: () => void; onDone: ()
           </div>
         )}
       </div>
+      {attempted && <ValidationSummary issues={issues} prefix="auth" />}
       <ErrorLine msg={err} />
-      <button onClick={submit} disabled={busy || !ready}
-        className="mt-5 w-full rounded-2xl bg-court py-4 text-[16px] font-bold text-white transition active:scale-[0.99] disabled:opacity-40">
+      <button onClick={submit} disabled={busy}
+        className={`mt-5 w-full rounded-2xl bg-court py-4 text-[16px] font-bold text-white transition active:scale-[0.99] disabled:opacity-40 ${!ready ? "opacity-50" : ""}`}>
         {busy ? "잠시만요" : mode === "login" ? "들어가기" : "가입하고 시작하기"}
       </button>
       {mode === "login" && (
         <div className="mt-3 space-y-1 text-center text-[12px] text-mute">
-          <button onClick={() => setLegacy((l) => !l)} className="underline underline-offset-2">
+          <button onClick={() => change("legacy", !legacy)} className="underline underline-offset-2">
             {legacy ? "이름 + 출생연도로 로그인" : "예전에 닉네임으로 가입했어요"}
           </button>
           <p>PIN을 잊었으면 운영진에게 초기화를 부탁하세요.</p>
@@ -224,6 +283,7 @@ export function CompleteProfileSheet({ me, onDone }: { me: NonNullable<Me>; onDo
   const ok = !!freq && !!somoim && (hasName || (!!name.trim() && !!year && !!region.trim()));
 
   async function save() {
+    if (!hasName && !region.trim().endsWith("역")) { setErr("지하철역 이름을 역까지 입력해주세요. 예: 삼전역"); return; }
     setBusy(true);
     setErr(null);
     try {
@@ -239,7 +299,7 @@ export function CompleteProfileSheet({ me, onDone }: { me: NonNullable<Me>; onDo
   return (
     <Sheet title="프로필을 채워주세요" onClose={() => {}}>
       <p className="mb-4 text-[14px] text-mute">
-        {hasName ? "몇 가지 정보가 새로 필요해졌어요. 한 번만 입력하면 돼요." : <>닉네임 규칙이 <b className="text-ink">이름/출생연도/지역/성별/NTRP+활동빈도</b>로 바뀌었어요. 한 번만 입력하면 닉네임이 자동으로 바뀝니다.</>}
+        {hasName ? "몇 가지 정보가 새로 필요해졌어요. 한 번만 입력하면 돼요." : <>닉네임 규칙이 <b className="text-ink">이름/출생연도/지하철역/성별/NTRP+활동빈도</b>로 바뀌었어요. 한 번만 입력하면 닉네임이 자동으로 바뀝니다.</>}
       </p>
       <div className="space-y-4">
         {!hasName && (
@@ -258,8 +318,8 @@ export function CompleteProfileSheet({ me, onDone }: { me: NonNullable<Me>; onDo
               </div>
             </div>
             <div>
-              <label className={label}>지역 (지하철역 또는 동)</label>
-              <input className={field} value={region} onChange={(e) => setRegion(e.target.value.replace(/[/]/g, ""))} maxLength={12} placeholder="삼전역 / 잠실동" />
+              <label className={label}>지하철역</label>
+              <input className={field} value={region} onChange={(e) => setRegion(e.target.value.replace(/[/]/g, ""))} maxLength={12} placeholder="예: 삼전역" />
             </div>
           </>
         )}
@@ -340,6 +400,7 @@ export function ProfileSheet({ me, onClose, onDone }: { me: NonNullable<Me>; onC
         <PushToggle />
         <PrefToggles me={me} />
       </div>
+      <ClubProfile me={me} onToast={setNote} />
       <button onClick={async () => { await logout(); onDone(); onClose(); }} className="mt-6 w-full py-3 text-[14px] font-semibold text-mute underline underline-offset-4">
         로그아웃
       </button>
@@ -359,37 +420,63 @@ function MoneyInput({ value, onChange, placeholder }: { value: number; onChange:
 }
 
 type PayFields = { payLink: string; account: string };
+type PayMode = "none" | "kakao" | "account";
+type EventDraft = { f: EventInput; pay: PayFields; payMode: PayMode };
+function isEventDraft(value: unknown): value is EventDraft {
+  const d = value as EventDraft | null;
+  return !!d?.f && !!d.pay && ["none", "kakao", "account"].includes(d.payMode)
+    && [d.pay.payLink, d.pay.account, d.f.court, d.f.date, d.f.startTime, d.f.endTime, d.f.note].every(v => typeof v === "string")
+    && ["any", "mens", "womens", "mixed"].includes(d.f.gameType)
+    && [d.f.capacity, d.f.maleCap, d.f.femaleCap, d.f.courtFee, d.f.ballFee, d.f.cancelHours].every(v => typeof v === "number" && Number.isFinite(v))
+    && [d.f.ntrpMin, d.f.ntrpMax].every(v => v === null || typeof v === "number");
+}
 
-export function EventSheet({ initial, defaults, onClose, onDone }: { initial?: Ev; defaults?: Partial<PayFields>; onClose: () => void; onDone: () => void }) {
+export function EventSheet({ initial, defaults, userId, onClose, onDone }: { initial?: Ev; defaults?: Partial<PayFields>; userId: number; onClose: () => void; onDone: () => void }) {
   const ip = initial as unknown as { payLink?: string | null; account?: string | null } | undefined;
-  const [pay, setPay] = useState<PayFields>({
+  const initialDraft = (): EventDraft => ({ pay: {
     payLink: (initial ? ip?.payLink : defaults?.payLink) ?? "",
     account: (initial ? ip?.account : defaults?.account) ?? "",
-  });
-  const [payMode, setPayMode] = useState<"none" | "kakao" | "account">(
+  }, payMode:
     (initial ? ip?.payLink : defaults?.payLink) ? "kakao" : (initial ? ip?.account : defaults?.account) ? "account" : "none",
-  );
-  const [f, setF] = useState<EventInput>(
+    f:
     initial
       ? { title: initial.title, court: initial.court, date: initial.date, startTime: initial.startTime, endTime: initial.endTime, gameType: initial.gameType,
-          capacity: initial.capacity, maleCap: initial.maleCap || 2, femaleCap: initial.femaleCap || 2, ntrpMin: initial.ntrpMin, ntrpMax: initial.ntrpMax,
+          capacity: initial.capacity, maleCap: initial.gameType === "mixed" ? initial.maleCap : 2, femaleCap: initial.gameType === "mixed" ? initial.femaleCap : 2, ntrpMin: initial.ntrpMin, ntrpMax: initial.ntrpMax,
           cancelHours: initial.cancelHours, note: initial.note, courtFee: initial.courtFee, ballFee: initial.ballFee }
-      : { title: "", court: "잠실유수지", date: kstToday(), startTime: "08:00", endTime: "10:00", gameType: "any", capacity: 6, maleCap: 2, femaleCap: 2,
+      : { title: "", court: "", date: kstToday(), startTime: "08:00", endTime: "10:00", gameType: "any", capacity: 6, maleCap: 2, femaleCap: 2,
           ntrpMin: null, ntrpMax: null, cancelHours: 0, note: "", courtFee: 0, ballFee: 0 },
-  );
+  });
+  const { value: draft, setValue: setDraft, restored, clearDraft, resetDraft } = useSessionDraft(`rb:event-draft:v1:${userId}:${initial?.id ?? "new"}`, initialDraft, isEventDraft);
+  const { f, pay, payMode } = draft;
+  const setF: Dispatch<SetStateAction<EventInput>> = update => setDraft(d => ({ ...d, f: typeof update === "function" ? update(d.f) : update }));
+  const setPay: Dispatch<SetStateAction<PayFields>> = update => setDraft(d => ({ ...d, pay: typeof update === "function" ? update(d.pay) : update }));
+  const setPayMode = (payMode: PayMode) => setDraft(d => ({ ...d, payMode }));
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [attempted, setAttempted] = useState(false);
   const set = <K extends keyof EventInput>(k: K, v: EventInput[K]) => setF((p) => ({ ...p, [k]: v }));
   const num = (v: string) => (v === "" ? null : Number(v));
   const seats = f.gameType === "mixed" ? f.maleCap + f.femaleCap : f.capacity;
+  const autoTitle = /^\d{4}-\d{2}-\d{2}$/.test(f.date) && f.court.trim() ? `${fmtShort(f.date)} ${f.court.trim()}` : "날짜와 코트를 입력하면 제목이 만들어져요";
+  const issues: FormIssue[] = [];
+  if (!f.court.trim()) issues.push({ field: "court", message: "코트명을 입력해주세요." });
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(f.date)) issues.push({ field: "date", message: "정모 날짜를 선택해주세요." });
+  if (!f.startTime || !f.endTime || f.endTime <= f.startTime) issues.push({ field: "start", message: "시작·종료 시간을 확인해주세요. 종료는 시작보다 늦어야 해요." });
+  if (f.gameType === "mixed" ? !Number.isInteger(f.maleCap) || !Number.isInteger(f.femaleCap) || f.maleCap < 0 || f.femaleCap < 0 || f.maleCap > 20 || f.femaleCap > 20 || seats < 1 : !Number.isInteger(seats) || seats < 1 || seats > 40) issues.push({ field: "capacity", message: "정원을 확인해주세요. 일반 정모는 1~40명, 혼복은 성별당 0~20명이에요." });
+  if (f.ntrpMin !== null && f.ntrpMax !== null && f.ntrpMin > f.ntrpMax) issues.push({ field: "ntrp", message: "최소 NTRP는 최대 NTRP보다 높을 수 없어요." });
+  if (payMode === "kakao" && !/^https:\/\/([a-z0-9-]+\.)*kakaopay\.com\/\S+$/i.test(pay.payLink)) issues.push({ field: "payment", message: "카카오페이 송금 링크를 붙여넣어주세요." });
+  if (payMode === "account" && !pay.account.trim()) issues.push({ field: "payment", message: "송금 받을 은행·계좌번호·예금주를 입력해주세요." });
 
   async function save() {
+    setAttempted(true);
+    if (issues.length) { setErr(null); focusIssue(`event-${issues[0].field}`); return; }
     setBusy(true);
     setErr(null);
     try {
-      const body = { ...f, payLink: payMode === "kakao" ? pay.payLink : "", account: payMode === "account" ? pay.account : "" } as EventInput;
+      const body = { ...f, title: "", payLink: payMode === "kakao" ? pay.payLink : "", account: payMode === "account" ? pay.account : "" } as EventInput;
       if (initial) await run(updateEvent(initial.id, body));
       else await run(createEvent(body));
+      clearDraft();
       onDone();
     } catch (e) {
       setErr(errText(e));
@@ -399,25 +486,27 @@ export function EventSheet({ initial, defaults, onClose, onDone }: { initial?: E
   }
 
   return (
-    <Sheet title={initial ? "일정 고치기" : "코트 잡았어요"} onClose={onClose}>
+    <Sheet title={initial ? "일정 고치기" : "코트 잡았어요"} onClose={() => { if (!busy) onClose(); }}>
+      <div className="mb-4"><DraftNotice restored={restored} onReset={() => { resetDraft(); setErr(null); setAttempted(false); }} /></div>
       <div className="space-y-4">
         <div>
-          <label className={label}>코트</label>
-          <input className={field} value={f.court} onChange={(e) => set("court", e.target.value)} placeholder="잠실유수지" />
+          <label htmlFor="event-court" className={label}>코트</label>
+          <input id="event-court" className={field} value={f.court} onChange={(e) => set("court", e.target.value)} maxLength={40} placeholder="예: 잠실유수지" aria-invalid={attempted && !f.court.trim()} aria-describedby="event-court-error" />
+          <FieldIssue id="event-court-error" issue={attempted ? issues.find(x => x.field === "court") : undefined} />
         </div>
         <div className="grid grid-cols-3 gap-2">
           <div className="col-span-3 sm:col-span-1">
-            <label className={label}>날짜</label>
-            <input type="date" className={field} value={f.date} onChange={(e) => set("date", e.target.value)} />
+            <label htmlFor="event-date" className={label}>날짜</label>
+            <input id="event-date" type="date" className={field} value={f.date} onChange={(e) => set("date", e.target.value)} />
           </div>
           <div className="col-span-3 grid grid-cols-2 gap-2 sm:col-span-2">
             <div>
-              <label className={label}>시작</label>
-              <input type="time" step={1800} className={field} value={f.startTime} onChange={(e) => set("startTime", e.target.value)} />
+              <label htmlFor="event-start" className={label}>시작</label>
+              <input id="event-start" type="time" step={1800} className={field} value={f.startTime} onChange={(e) => set("startTime", e.target.value)} />
             </div>
             <div>
-              <label className={label}>끝</label>
-              <input type="time" step={1800} className={field} value={f.endTime} onChange={(e) => set("endTime", e.target.value)} />
+              <label htmlFor="event-end" className={label}>끝</label>
+              <input id="event-end" type="time" step={1800} className={field} value={f.endTime} onChange={(e) => set("endTime", e.target.value)} />
             </div>
           </div>
         </div>
@@ -426,7 +515,7 @@ export function EventSheet({ initial, defaults, onClose, onDone }: { initial?: E
           <Seg value={f.gameType} onChange={(v) => set("gameType", v)} options={[["any", "자유"], ["mixed", "혼복"], ["mens", "남복"], ["womens", "여복"]]} />
         </div>
         {f.gameType === "mixed" ? (
-          <div className="grid grid-cols-2 gap-2">
+          <div id="event-capacity" tabIndex={-1} className="grid grid-cols-2 gap-2">
             <div>
               <label className={label}>남자 자리</label>
               <input type="number" min={0} max={20} className={field} value={f.maleCap} onChange={(e) => set("maleCap", Number(e.target.value))} />
@@ -438,8 +527,8 @@ export function EventSheet({ initial, defaults, onClose, onDone }: { initial?: E
           </div>
         ) : (
           <div>
-            <label className={label}>정원 (넘치면 자동으로 대기)</label>
-            <input type="number" min={1} max={40} className={field} value={f.capacity} onChange={(e) => set("capacity", Number(e.target.value))} />
+            <label htmlFor="event-capacity" className={label}>정원 (넘치면 자동으로 대기)</label>
+            <input id="event-capacity" type="number" min={1} max={40} className={field} value={f.capacity} onChange={(e) => set("capacity", Number(e.target.value))} />
           </div>
         )}
         <div>
@@ -454,24 +543,14 @@ export function EventSheet({ initial, defaults, onClose, onDone }: { initial?: E
             </p>
           )}
         </div>
-        <div>
+        <div id="event-payment" tabIndex={-1}>
           <label className={label}>💸 송금 받을 곳 (하나만 골라요 · 다음 일정에 자동으로 채워져요)</label>
           <Seg value={payMode} onChange={setPayMode} options={[["none", "안 받음"], ["kakao", "카카오페이"], ["account", "계좌번호"]]} />
           {payMode === "kakao" && (
             <>
               <input className={`${field} mt-2`} value={pay.payLink} onChange={(e) => setPay((p) => ({ ...p, payLink: e.target.value.trim() }))}
                 placeholder="https://qr.kakaopay.com/..." inputMode="url" />
-              <details className="group mt-1.5 rounded-xl bg-paper px-3 py-2 text-[12px] leading-relaxed text-ink/80">
-                <summary className="cursor-pointer list-none font-bold text-court-deep">
-                  📖 카카오페이 송금 링크 만드는 법 <span className="text-mute group-open:hidden">▼</span><span className="hidden text-mute group-open:inline">▲</span>
-                </summary>
-                <ol className="mt-1.5 list-decimal space-y-0.5 pl-4">
-                  <li>카카오톡 아래 <b>더보기(⋯)</b> → <b>페이</b>(카카오페이)로 들어가요</li>
-                  <li><b>송금</b> 메뉴에서 <b>송금코드</b>(내 QR코드)를 열어요</li>
-                  <li><b>링크 복사</b>를 눌러 복사한 뒤 위 칸에 붙여넣어요</li>
-                </ol>
-                <p className="mt-1.5 text-mute">메뉴 이름은 카카오톡 버전에 따라 조금 다를 수 있어요. 참석자에게는 &quot;카카오페이로 송금하기&quot; 버튼이 보이고, 금액은 직접 입력해요.</p>
-              </details>
+              <KakaoPayGuide />
             </>
           )}
           {payMode === "account" && (
@@ -482,7 +561,7 @@ export function EventSheet({ initial, defaults, onClose, onDone }: { initial?: E
             </>
           )}
         </div>
-        <div>
+        <div id="event-ntrp" tabIndex={-1}>
           <label className={label}>NTRP 제한 (비워두면 누구나)</label>
           <div className="grid grid-cols-2 gap-2">
             <select className={field} value={f.ntrpMin ?? ""} onChange={(e) => set("ntrpMin", num(e.target.value))}>
@@ -495,24 +574,18 @@ export function EventSheet({ initial, defaults, onClose, onDone }: { initial?: E
             </select>
           </div>
         </div>
+        <p className="rounded-xl bg-paper p-3 text-[12px] text-mute">모든 정모에 모임의 취소·지각 규칙을 적용해요. 취소 시점에 따른 벌칙과 대참 안내는 참가 화면에서 확인할 수 있어요.</p>
         <div>
-          <label className={label}>참석 취소 마감</label>
-          <select className={field} value={f.cancelHours} onChange={(e) => set("cancelHours", Number(e.target.value))}>
-            <option value={0}>마감 없음</option>
-            <option value={12}>시작 12시간 전까지</option>
-            <option value={24}>시작 하루 전까지</option>
-            <option value={48}>시작 이틀 전까지</option>
-          </select>
-        </div>
-        <div>
-          <label className={label}>제목 (비우면 "10/16 금 잠실유수지"처럼 자동)</label>
-          <input className={field} value={f.title} onChange={(e) => set("title", e.target.value)} maxLength={60} />
+          <p className={label}>자동 생성 제목</p>
+          <output aria-label="자동 생성 제목" className="block rounded-xl bg-paper px-3.5 py-3 text-[15px] font-bold text-court-deep">{autoTitle}</output>
+          <p className="mt-1.5 text-[12px] text-mute">날짜·요일·코트명으로 정해져요. 별도 안내는 아래 메모에 적어주세요.</p>
         </div>
         <div>
           <label className={label}>메모</label>
           <textarea className={`${field} min-h-20`} value={f.note} onChange={(e) => set("note", e.target.value)} maxLength={300} placeholder="코트 번호, 공 준비, 비 오면 취소 등" />
         </div>
       </div>
+      {attempted && <ValidationSummary issues={issues} prefix="event" />}
       <ErrorLine msg={err} />
       <button onClick={save} disabled={busy} className="mt-5 flex w-full items-center justify-center gap-2 rounded-2xl bg-clay py-4 text-[16px] font-bold text-white disabled:opacity-40">
         {busy ? "올리는 중" : initial ? "고친 내용 저장" : "일정 올리기"}
